@@ -1250,13 +1250,18 @@ class ExportService {
         const sourceMatch = /<msgsource>[\s\S]*?<\/msgsource>/i.exec(msg.content || '')
         const source = sourceMatch ? sourceMatch[0] : ''
 
+        let content = this.parseMessageContent(msg.content, msg.localType)
+        if (msg.localType === 34 && options.exportVoiceAsText) {
+          content = await this.transcribeVoice(sessionId, String(msg.localId))
+        }
+
         allMessages.push({
           localId: allMessages.length + 1,
           createTime: msg.createTime,
           formattedTime: this.formatTimestamp(msg.createTime),
           type: this.getMessageTypeName(msg.localType),
           localType: msg.localType,
-          content: this.parseMessageContent(msg.content, msg.localType),
+          content,
           isSend: msg.isSend ? 1 : 0,
           senderUsername: msg.senderUsername,
           senderDisplayName: senderInfo.displayName,
@@ -1541,9 +1546,12 @@ class ExportService {
         row.height = 24
 
         // 确定内容：如果有媒体文件导出成功则显示相对路径，否则显示解析后的内容
-        const contentValue = mediaItem
+        let contentValue = mediaItem
           ? mediaItem.relativePath
           : (this.parseMessageContent(msg.content, msg.localType) || '')
+        if (!mediaItem && msg.localType === 34 && options.exportVoiceAsText) {
+          contentValue = await this.transcribeVoice(sessionId, String(msg.localId))
+        }
 
         // 调试日志
         if (msg.localType === 3 || msg.localType === 47) {
@@ -1689,4 +1697,3 @@ class ExportService {
 }
 
 export const exportService = new ExportService()
-
