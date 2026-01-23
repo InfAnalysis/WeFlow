@@ -4,6 +4,7 @@ import * as http from 'http'
 import * as https from 'https'
 import { fileURLToPath } from 'url'
 import ExcelJS from 'exceljs'
+import { getEmojiPath } from 'wechat-emojis'
 import { ConfigService } from './config'
 import { wcdbService } from './wcdbService'
 import { imageDecryptService } from './imageDecryptService'
@@ -129,6 +130,7 @@ async function parallelLimit<T, R>(
 class ExportService {
   private configService: ConfigService
   private contactCache: Map<string, { displayName: string; avatarUrl?: string }> = new Map()
+  private inlineEmojiCache: Map<string, string> = new Map()
 
   constructor() {
     this.configService = new ConfigService()
@@ -218,6 +220,9 @@ class ExportService {
     if (!raw) return ''
     if (typeof raw === 'string') {
       if (raw.length === 0) return ''
+      if (/^[0-9]+$/.test(raw)) {
+        return raw
+      }
       if (this.looksLikeHex(raw)) {
         const bytes = Buffer.from(raw, 'hex')
         if (bytes.length > 0) return this.decodeBinaryContent(bytes)
@@ -475,19 +480,70 @@ class ExportService {
     return this.escapeHtml(value).replace(/\r?\n/g, '<br />')
   }
 
+  private normalizeAppMessageContent(content: string): string {
+    if (!content) return ''
+    if (content.includes('&lt;') && content.includes('&gt;')) {
+      return content
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+    }
+    return content
+  }
+
+  private getInlineEmojiDataUrl(name: string): string | null {
+    if (!name) return null
+    const cached = this.inlineEmojiCache.get(name)
+    if (cached) return cached
+    const emojiPath = getEmojiPath(name as any)
+    if (!emojiPath) return null
+    const baseDir = path.dirname(require.resolve('wechat-emojis'))
+    const absolutePath = path.join(baseDir, emojiPath)
+    if (!fs.existsSync(absolutePath)) return null
+    try {
+      const buffer = fs.readFileSync(absolutePath)
+      const dataUrl = `data:image/png;base64,${buffer.toString('base64')}`
+      this.inlineEmojiCache.set(name, dataUrl)
+      return dataUrl
+    } catch {
+      return null
+    }
+  }
+
+  private renderTextWithEmoji(text: string): string {
+    if (!text) return ''
+    const parts = text.split(/\[(.*?)\]/g)
+    const rendered = parts.map((part, index) => {
+      if (index % 2 === 1) {
+        const emojiDataUrl = this.getInlineEmojiDataUrl(part)
+        if (emojiDataUrl) {
+          return `<img class="inline-emoji" src="${this.escapeAttribute(emojiDataUrl)}" alt="[${this.escapeAttribute(part)}]" />`
+        }
+        return this.escapeHtml(`[${part}]`)
+      }
+      return this.escapeHtml(part)
+    })
+    return rendered.join('')
+  }
+
   private formatHtmlMessageText(content: string, localType: number): string {
     if (!content) return ''
 
-    if (localType === 49) {
-      const typeMatch = /<type>(\d+)<\/type>/i.exec(content)
+    const normalized = this.normalizeAppMessageContent(content)
+    const isAppMessage = normalized.includes('<appmsg') || normalized.includes('<msg>')
+
+    if (localType === 49 || isAppMessage) {
+      const typeMatch = /<type>(\d+)<\/type>/i.exec(normalized)
       const subType = typeMatch ? parseInt(typeMatch[1], 10) : 0
-      const title = this.extractXmlValue(content, 'title') || this.extractXmlValue(content, 'appname')
+      const title = this.extractXmlValue(normalized, 'title') || this.extractXmlValue(normalized, 'appname')
       if (subType === 6) {
-        const fileName = this.extractXmlValue(content, 'filename') || title || '文件'
+        const fileName = this.extractXmlValue(normalized, 'filename') || title || '文件'
         return `[文件] ${fileName}`.trim()
       }
       if (subType === 33 || subType === 36) {
-        const appName = this.extractXmlValue(content, 'appname')
+        const appName = this.extractXmlValue(normalized, 'appname')
         const miniTitle = title || appName || '小程序'
         return `[小程序] ${miniTitle}`.trim()
       }
@@ -495,7 +551,7 @@ class ExportService {
     }
 
     if (localType === 42) {
-      const nickname = this.extractXmlValue(content, 'nickname')
+      const nickname = this.extractXmlValue(normalized, 'nickname')
       return nickname ? `[名片] ${nickname}` : '[名片]'
     }
 
@@ -2356,7 +2412,7 @@ class ExportService {
         }
 
         const textHtml = textContent
-          ? `<div class="message-text">${this.renderMultilineText(textContent)}</div>`
+          ? `<div class="message-text">${this.renderTextWithEmoji(textContent).replace(/\r?\n/g, '<br />')}</div>`
           : ''
         const senderHtml = isGroup
           ? `<div class="sender-name">${this.escapeHtml(senderName)}</div>`
@@ -2582,9 +2638,20 @@ class ExportService {
         word-break: break-word;
       }
 
+      .inline-emoji {
+        width: 22px;
+        height: 22px;
+        vertical-align: text-bottom;
+        margin: 0 2px;
+      }
+
       .message-media {
         border-radius: 14px;
         max-width: 100%;
+      }
+
+      .previewable {
+        cursor: zoom-in;
       }
 
       .message-media.image,
@@ -2633,6 +2700,8 @@ class ExportService {
         border-radius: 18px;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
         background: #0f172a;
+        transition: transform 0.1s ease;
+        cursor: zoom-out;
       }
 
       body[data-theme="cloud-dancer"] {
@@ -2741,6 +2810,7 @@ class ExportService {
       const themeSelect = document.getElementById('themeSelect')
       const imagePreview = document.getElementById('imagePreview')
       const imagePreviewTarget = document.getElementById('imagePreviewTarget')
+      let imageZoom = 1
 
       const updateCount = () => {
         const visible = messages.filter((msg) => !msg.classList.contains('hidden'))
@@ -2794,13 +2864,34 @@ class ExportService {
           const full = img.getAttribute('data-full')
           if (!full) return
           imagePreviewTarget.src = full
+          imageZoom = 1
+          imagePreviewTarget.style.transform = 'scale(1)'
           imagePreview.classList.add('active')
         })
       })
 
+      imagePreviewTarget.addEventListener('click', (event) => {
+        event.stopPropagation()
+      })
+
+      imagePreviewTarget.addEventListener('dblclick', (event) => {
+        event.stopPropagation()
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
+      })
+
+      imagePreviewTarget.addEventListener('wheel', (event) => {
+        event.preventDefault()
+        const delta = event.deltaY > 0 ? -0.1 : 0.1
+        imageZoom = Math.min(3, Math.max(0.5, imageZoom + delta))
+        imagePreviewTarget.style.transform = \`scale(\${imageZoom})\`
+      }, { passive: false })
+
       imagePreview.addEventListener('click', () => {
         imagePreview.classList.remove('active')
         imagePreviewTarget.src = ''
+        imageZoom = 1
+        imagePreviewTarget.style.transform = 'scale(1)'
       })
 
       updateCount()
