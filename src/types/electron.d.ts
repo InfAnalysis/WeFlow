@@ -342,7 +342,7 @@ export interface ElectronAPI {
       success: boolean
       data?: {
         year: number
-        myName: string
+        selfName: string
         friendUsername: string
         friendName: string
         firstChat: {
@@ -352,7 +352,7 @@ export interface ElectronAPI {
           isSentByMe: boolean
           senderUsername?: string
         } | null
-        thisYearFirstChat?: {
+        yearFirstChat?: {
           createTime: number
           createTimeStr: string
           content: string
@@ -365,7 +365,7 @@ export interface ElectronAPI {
             createTimeStr: string
           }>
         } | null
-        yearlyStats: {
+        stats: {
           totalMessages: number
           totalWords: number
           imageCount: number
@@ -376,11 +376,7 @@ export interface ElectronAPI {
           myTopEmojiUrl?: string
           friendTopEmojiUrl?: string
         }
-        wordCloud: {
-          words: Array<{ phrase: string; count: number }>
-          totalWords: number
-          totalMessages: number
-        }
+        topPhrases: Array<{ phrase: string; count: number }>
       }
       error?: string
     }>

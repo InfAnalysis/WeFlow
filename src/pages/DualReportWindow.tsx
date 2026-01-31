@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react'
-import { Loader2 } from 'lucide-react'
+import './AnnualReportWindow.scss'
 import './DualReportWindow.scss'
 
 interface DualReportMessage {
@@ -11,7 +11,7 @@ interface DualReportMessage {
 
 interface DualReportData {
   year: number
-  myName: string
+  selfName: string
   friendUsername: string
   friendName: string
   firstChat: {
@@ -21,7 +21,7 @@ interface DualReportData {
     isSentByMe: boolean
     senderUsername?: string
   } | null
-  thisYearFirstChat?: {
+  yearFirstChat?: {
     createTime: number
     createTimeStr: string
     content: string
@@ -29,7 +29,7 @@ interface DualReportData {
     friendName: string
     firstThreeMessages: DualReportMessage[]
   } | null
-  yearlyStats: {
+  stats: {
     totalMessages: number
     totalWords: number
     imageCount: number
@@ -40,19 +40,16 @@ interface DualReportData {
     myTopEmojiUrl?: string
     friendTopEmojiUrl?: string
   }
-  wordCloud: {
-    words: Array<{ phrase: string; count: number }>
-    totalWords: number
-    totalMessages: number
-  }
+  topPhrases: Array<{ phrase: string; count: number }>
 }
 
 const WordCloud = ({ words }: { words: { phrase: string; count: number }[] }) => {
   if (!words || words.length === 0) {
     return <div className="word-cloud-empty">暂无高频语句</div>
   }
-  const maxCount = words.length > 0 ? words[0].count : 1
-  const topWords = words.slice(0, 32)
+  const sortedWords = [...words].sort((a, b) => b.count - a.count)
+  const maxCount = sortedWords.length > 0 ? sortedWords[0].count : 1
+  const topWords = sortedWords.slice(0, 32)
   const baseSize = 520
 
   const seededRandom = (seed: number) => {
@@ -205,7 +202,7 @@ function DualReportWindow() {
   useEffect(() => {
     const loadEmojis = async () => {
       if (!reportData) return
-      const stats = reportData.yearlyStats
+      const stats = reportData.stats
       if (stats.myTopEmojiUrl) {
         const res = await window.electronAPI.chat.downloadEmoji(stats.myTopEmojiUrl, stats.myTopEmojiMd5)
         if (res.success && res.localPath) {
@@ -224,25 +221,35 @@ function DualReportWindow() {
 
   if (isLoading) {
     return (
-      <div className="dual-report-window loading">
-        <Loader2 size={36} className="spin" />
-        <div className="progress">{loadingProgress}%</div>
-        <div className="stage">{loadingStage}</div>
+      <div className="annual-report-window loading">
+        <div className="loading-ring">
+          <svg viewBox="0 0 100 100">
+            <circle className="ring-bg" cx="50" cy="50" r="42" />
+            <circle
+              className="ring-progress"
+              cx="50" cy="50" r="42"
+              style={{ strokeDashoffset: 264 - (264 * loadingProgress / 100) }}
+            />
+          </svg>
+          <span className="ring-text">{loadingProgress}%</span>
+        </div>
+        <p className="loading-stage">{loadingStage}</p>
+        <p className="loading-hint">进行中</p>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="dual-report-window error">
-        <p>生成报告失败：{error}</p>
+      <div className="annual-report-window error">
+        <p>生成报告失败: {error}</p>
       </div>
     )
   }
 
   if (!reportData) {
     return (
-      <div className="dual-report-window error">
+      <div className="annual-report-window error">
         <p>暂无数据</p>
       </div>
     )
@@ -253,112 +260,142 @@ function DualReportWindow() {
   const daysSince = firstChat
     ? Math.max(0, Math.floor((Date.now() - firstChat.createTime) / 86400000))
     : null
-  const thisYearFirstChat = reportData.thisYearFirstChat
-  const stats = reportData.yearlyStats
+  const yearFirstChat = reportData.yearFirstChat
+  const stats = reportData.stats
 
   return (
-    <div className="dual-report-window">
-      <section className="dual-section cover">
-        <div className="label">DUAL REPORT</div>
-        <h1>{reportData.myName} &amp; {reportData.friendName}</h1>
-        <p>让我们一起回顾这段独一无二的对话</p>
-      </section>
+    <div className="annual-report-window dual-report-window">
+      <div className="drag-region" />
 
-      <section className="dual-section">
-        <div className="section-title">首次聊天</div>
-        {firstChat ? (
-          <div className="info-card">
-            <div className="info-row">
-              <span className="info-label">第一次聊天时间</span>
-              <span className="info-value">{firstChat.createTimeStr}</span>
-            </div>
-            <div className="info-row">
-              <span className="info-label">距今天数</span>
-              <span className="info-value">{daysSince} 天</span>
-            </div>
-            <div className="info-row">
-              <span className="info-label">首条消息</span>
-              <span className="info-value">{firstChat.content || '（空）'}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="info-empty">暂无首条消息</div>
-        )}
-      </section>
+      <div className="bg-decoration">
+        <div className="deco-circle c1" />
+        <div className="deco-circle c2" />
+        <div className="deco-circle c3" />
+        <div className="deco-circle c4" />
+        <div className="deco-circle c5" />
+      </div>
 
-      {thisYearFirstChat ? (
-        <section className="dual-section">
-          <div className="section-title">今年首次聊天</div>
-          <div className="info-card">
-            <div className="info-row">
-              <span className="info-label">首次时间</span>
-              <span className="info-value">{thisYearFirstChat.createTimeStr}</span>
+      <div className="report-scroll-view">
+        <div className="report-container">
+          <section className="section">
+            <div className="label-text">WEFLOW · DUAL REPORT</div>
+            <h1 className="hero-title">{yearTitle}<br />双人聊天报告</h1>
+            <hr className="divider" />
+            <div className="dual-names">
+              <span>{reportData.selfName}</span>
+              <span className="amp">&amp;</span>
+              <span>{reportData.friendName}</span>
             </div>
-            <div className="info-row">
-              <span className="info-label">发起者</span>
-              <span className="info-value">{thisYearFirstChat.isSentByMe ? reportData.myName : reportData.friendName}</span>
-            </div>
-            <div className="message-list">
-              {thisYearFirstChat.firstThreeMessages.map((msg, idx) => (
-                <div key={idx} className={`message-item ${msg.isSentByMe ? 'sent' : 'received'}`}>
-                  <div className="message-meta">{msg.isSentByMe ? reportData.myName : reportData.friendName} · {msg.createTimeStr}</div>
-                  <div className="message-content">{msg.content || '（空）'}</div>
+            <p className="hero-desc">每一次对话都值得被珍藏</p>
+          </section>
+
+          <section className="section">
+            <div className="label-text">首次聊天</div>
+            <h2 className="hero-title">故事的开始</h2>
+            {firstChat ? (
+              <div className="dual-info-grid">
+                <div className="dual-info-card">
+                  <div className="info-label">第一次聊天时间</div>
+                  <div className="info-value">{firstChat.createTimeStr}</div>
                 </div>
-              ))}
+                <div className="dual-info-card">
+                  <div className="info-label">距今天数</div>
+                  <div className="info-value">{daysSince} 天</div>
+                </div>
+                <div className="dual-info-card full">
+                  <div className="info-label">首条消息</div>
+                  <div className="info-value">{firstChat.content || '（空）'}</div>
+                </div>
+              </div>
+            ) : (
+              <p className="hero-desc">暂无首条消息</p>
+            )}
+          </section>
+
+          {yearFirstChat ? (
+            <section className="section">
+              <div className="label-text">今年首次聊天</div>
+              <h2 className="hero-title">新一年的开场</h2>
+              <div className="dual-info-grid">
+                <div className="dual-info-card">
+                  <div className="info-label">首次时间</div>
+                  <div className="info-value">{yearFirstChat.createTimeStr}</div>
+                </div>
+                <div className="dual-info-card">
+                  <div className="info-label">发起者</div>
+                  <div className="info-value">{yearFirstChat.isSentByMe ? reportData.selfName : reportData.friendName}</div>
+                </div>
+              </div>
+              <div className="dual-message-list">
+                {yearFirstChat.firstThreeMessages.map((msg, idx) => (
+                  <div key={idx} className={`dual-message ${msg.isSentByMe ? 'sent' : 'received'}`}>
+                    <div className="message-meta">{msg.isSentByMe ? reportData.selfName : reportData.friendName} · {msg.createTimeStr}</div>
+                    <div className="message-content">{msg.content || '（空）'}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          <section className="section">
+            <div className="label-text">常用语</div>
+            <h2 className="hero-title">{yearTitle}常用语</h2>
+            <WordCloud words={reportData.topPhrases} />
+          </section>
+
+          <section className="section">
+            <div className="label-text">年度统计</div>
+            <h2 className="hero-title">{yearTitle}数据概览</h2>
+            <div className="dual-stat-grid">
+              <div className="dual-stat-card">
+                <div className="stat-num">{stats.totalMessages.toLocaleString()}</div>
+                <div className="stat-unit">总消息数</div>
+              </div>
+              <div className="dual-stat-card">
+                <div className="stat-num">{stats.totalWords.toLocaleString()}</div>
+                <div className="stat-unit">总字数</div>
+              </div>
+              <div className="dual-stat-card">
+                <div className="stat-num">{stats.imageCount.toLocaleString()}</div>
+                <div className="stat-unit">图片</div>
+              </div>
+              <div className="dual-stat-card">
+                <div className="stat-num">{stats.voiceCount.toLocaleString()}</div>
+                <div className="stat-unit">语音</div>
+              </div>
+              <div className="dual-stat-card">
+                <div className="stat-num">{stats.emojiCount.toLocaleString()}</div>
+                <div className="stat-unit">表情</div>
+              </div>
             </div>
-          </div>
-        </section>
-      ) : null}
 
-      <section className="dual-section">
-        <div className="section-title">{yearTitle}常用语</div>
-        <WordCloud words={reportData.wordCloud.words} />
-      </section>
+            <div className="emoji-row">
+              <div className="emoji-card">
+                <div className="emoji-title">我常用的表情</div>
+                {myEmojiUrl ? (
+                  <img src={myEmojiUrl} alt="my-emoji" />
+                ) : (
+                  <div className="emoji-placeholder">{stats.myTopEmojiMd5 || '暂无'}</div>
+                )}
+              </div>
+              <div className="emoji-card">
+                <div className="emoji-title">{reportData.friendName}常用的表情</div>
+                {friendEmojiUrl ? (
+                  <img src={friendEmojiUrl} alt="friend-emoji" />
+                ) : (
+                  <div className="emoji-placeholder">{stats.friendTopEmojiMd5 || '暂无'}</div>
+                )}
+              </div>
+            </div>
+          </section>
 
-      <section className="dual-section">
-        <div className="section-title">{yearTitle}统计</div>
-        <div className="stats-grid">
-          <div className="stat-card">
-            <div className="stat-value">{stats.totalMessages.toLocaleString()}</div>
-            <div className="stat-label">总消息数</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.totalWords.toLocaleString()}</div>
-            <div className="stat-label">总字数</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.imageCount.toLocaleString()}</div>
-            <div className="stat-label">图片</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.voiceCount.toLocaleString()}</div>
-            <div className="stat-label">语音</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-value">{stats.emojiCount.toLocaleString()}</div>
-            <div className="stat-label">表情</div>
-          </div>
+          <section className="section">
+            <div className="label-text">尾声</div>
+            <h2 className="hero-title">谢谢你一直在</h2>
+            <p className="hero-desc">愿我们继续把故事写下去</p>
+          </section>
         </div>
-
-        <div className="emoji-row">
-          <div className="emoji-card">
-            <div className="emoji-title">我常用的表情</div>
-            {myEmojiUrl ? (
-              <img src={myEmojiUrl} alt="my-emoji" />
-            ) : (
-              <div className="emoji-placeholder">{stats.myTopEmojiMd5 || '暂无'}</div>
-            )}
-          </div>
-          <div className="emoji-card">
-            <div className="emoji-title">{reportData.friendName}常用的表情</div>
-            {friendEmojiUrl ? (
-              <img src={friendEmojiUrl} alt="friend-emoji" />
-            ) : (
-              <div className="emoji-placeholder">{stats.friendTopEmojiMd5 || '暂无'}</div>
-            )}
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   )
 }

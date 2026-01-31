@@ -16,7 +16,7 @@ export interface DualReportFirstChat {
   senderUsername?: string
 }
 
-export interface DualReportYearlyStats {
+export interface DualReportStats {
   totalMessages: number
   totalWords: number
   imageCount: number
@@ -28,19 +28,13 @@ export interface DualReportYearlyStats {
   friendTopEmojiUrl?: string
 }
 
-export interface DualReportWordCloud {
-  words: Array<{ phrase: string; count: number }>
-  totalWords: number
-  totalMessages: number
-}
-
 export interface DualReportData {
   year: number
-  myName: string
+  selfName: string
   friendUsername: string
   friendName: string
   firstChat: DualReportFirstChat | null
-  thisYearFirstChat?: {
+  yearFirstChat?: {
     createTime: number
     createTimeStr: string
     content: string
@@ -48,8 +42,8 @@ export interface DualReportData {
     friendName: string
     firstThreeMessages: DualReportMessage[]
   } | null
-  yearlyStats: DualReportYearlyStats
-  wordCloud: DualReportWordCloud
+  stats: DualReportStats
+  topPhrases: Array<{ phrase: string; count: number }>
 }
 
 class DualReportService {
@@ -272,7 +266,7 @@ class DualReportService {
         }
       }
 
-      let thisYearFirstChat: DualReportData['thisYearFirstChat'] = null
+      let yearFirstChat: DualReportData['yearFirstChat'] = null
       if (!isAllTime) {
         this.reportProgress('获取今年首次聊天...', 20, onProgress)
         const firstYearRows = await this.getFirstMessages(friendUsername, 3, startTime, endTime)
@@ -289,7 +283,7 @@ class DualReportService {
               createTimeStr: this.formatDateTime(msgTime)
             }
           })
-          thisYearFirstChat = {
+          yearFirstChat = {
             createTime,
             createTimeStr: this.formatDateTime(createTime),
             content: String(this.decodeMessageContent(firstRow.message_content, firstRow.compress_content) || ''),
@@ -301,7 +295,7 @@ class DualReportService {
       }
 
       this.reportProgress('统计聊天数据...', 30, onProgress)
-      const yearlyStats: DualReportYearlyStats = {
+      const stats: DualReportStats = {
         totalMessages: 0,
         totalWords: 0,
         imageCount: 0,
@@ -334,12 +328,12 @@ class DualReportService {
           for (const row of batch.rows) {
             const localType = parseInt(row.local_type || row.type || '1', 10)
             const isSent = this.resolveIsSent(row, rawWxid, cleanedWxid)
-            yearlyStats.totalMessages += 1
+            stats.totalMessages += 1
 
-            if (localType === 3) yearlyStats.imageCount += 1
-            if (localType === 34) yearlyStats.voiceCount += 1
+            if (localType === 3) stats.imageCount += 1
+            if (localType === 34) stats.voiceCount += 1
             if (localType === 47) {
-              yearlyStats.emojiCount += 1
+              stats.emojiCount += 1
               const content = this.decodeMessageContent(row.message_content, row.compress_content)
               const md5 = this.extractEmojiMd5(content)
               const url = this.extractEmojiUrl(content)
@@ -357,7 +351,7 @@ class DualReportService {
               const content = this.decodeMessageContent(row.message_content, row.compress_content)
               const text = String(content || '').trim()
               if (text.length > 0) {
-                yearlyStats.totalWords += text.replace(/\s+/g, '').length
+                stats.totalWords += text.replace(/\s+/g, '').length
                 const normalized = text.replace(/\s+/g, ' ').trim()
                 if (normalized.length >= 2 &&
                   normalized.length <= 50 &&
@@ -405,33 +399,27 @@ class DualReportService {
       const myTopEmojiMd5 = pickTop(myEmojiCounts)
       const friendTopEmojiMd5 = pickTop(friendEmojiCounts)
 
-      yearlyStats.myTopEmojiMd5 = myTopEmojiMd5
-      yearlyStats.friendTopEmojiMd5 = friendTopEmojiMd5
-      yearlyStats.myTopEmojiUrl = myTopEmojiMd5 ? myEmojiUrlMap.get(myTopEmojiMd5) : undefined
-      yearlyStats.friendTopEmojiUrl = friendTopEmojiMd5 ? friendEmojiUrlMap.get(friendTopEmojiMd5) : undefined
+      stats.myTopEmojiMd5 = myTopEmojiMd5
+      stats.friendTopEmojiMd5 = friendTopEmojiMd5
+      stats.myTopEmojiUrl = myTopEmojiMd5 ? myEmojiUrlMap.get(myTopEmojiMd5) : undefined
+      stats.friendTopEmojiUrl = friendTopEmojiMd5 ? friendEmojiUrlMap.get(friendTopEmojiMd5) : undefined
 
       this.reportProgress('生成常用语词云...', 85, onProgress)
-      const wordCloudWords = Array.from(wordCountMap.entries())
+      const topPhrases = Array.from(wordCountMap.entries())
         .filter(([_, count]) => count >= 2)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 50)
         .map(([phrase, count]) => ({ phrase, count }))
 
-      const wordCloud: DualReportWordCloud = {
-        words: wordCloudWords,
-        totalWords: yearlyStats.totalWords,
-        totalMessages: yearlyStats.totalMessages
-      }
-
       const reportData: DualReportData = {
         year: reportYear,
-        myName,
+        selfName: myName,
         friendUsername,
         friendName,
         firstChat,
-        thisYearFirstChat,
-        yearlyStats,
-        wordCloud
+        yearFirstChat,
+        stats,
+        topPhrases
       }
 
       this.reportProgress('双人报告生成完成', 100, onProgress)
