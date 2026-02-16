@@ -434,7 +434,7 @@ export default function SnsPage() {
                     <div className="sns-content-wrapper">
                         <div className="sns-notice-banner">
                             <AlertTriangle size={16} />
-                            <span>由于技术限制，当前无法解密显示部分图片与视频等加密资源文件</span>
+                            <span>由于技术限制，当前无法解密显示视频加密资源文件</span>
                         </div>
                         <div className="sns-content custom-scrollbar" onScroll={handleScroll} onWheel={handleWheel} ref={postsContainerRef}>
                             <div className="posts-list">

@@ -75,6 +75,7 @@ const detectImageMime = (buf: Buffer, fallback: string = 'image/jpeg') => {
 }
 
 class SnsService {
+    private configService: ConfigService
     private contactCache: ContactCacheService
     private imageCache = new Map<string, string>()
 
@@ -87,8 +88,8 @@ class SnsService {
     private nativeDecryptFn: any = null
 
     constructor() {
-        const config = new ConfigService()
-        this.contactCache = new ContactCacheService(config.get('cachePath') as string)
+        this.configService = new ConfigService()
+        this.contactCache = new ContactCacheService(this.configService.get('cachePath') as string)
     }
 
     async getTimeline(limit: number = 20, offset: number = 0, usernames?: string[], keyword?: string, startTime?: number, endTime?: number): Promise<{ success: boolean; timeline?: SnsPost[]; error?: string }> {
@@ -182,10 +183,13 @@ class SnsService {
             return null
         }
     }
-
     private resolveWeixinDllPath(): string | null {
         const candidates: string[] = []
+
         if (process.env.WEFLOW_WEIXIN_DLL) candidates.push(process.env.WEFLOW_WEIXIN_DLL)
+
+        const configuredPath = String(this.configService.get('weixinDllPath') || '').trim()
+        if (configuredPath) candidates.push(configuredPath)
 
         const weixinExe = process.env.WEFLOW_WEIXIN_EXE
         if (weixinExe) {
@@ -195,27 +199,32 @@ class SnsService {
 
         const programFiles = process.env.ProgramFiles || 'C:\\Program Files'
         const localAppData = process.env.LOCALAPPDATA || ''
-        candidates.push(
-            join(programFiles, 'Tencent', 'Weixin', 'Weixin.dll'),
-            'D:\\weixindata\\Weixin\\Weixin.dll',
-            'C:\\Users\\16586\\Desktop\\sns\\Weixin.dll'
-        )
+        candidates.push(join(programFiles, 'Tencent', 'Weixin', 'Weixin.dll'))
         if (localAppData) candidates.push(join(localAppData, 'Tencent', 'xwechat', 'Weixin.dll'))
 
+        const seen = new Set<string>()
         for (const p of candidates) {
-            if (p && existsSync(p)) return p
+            if (!p) continue
+            const normalized = p.trim()
+            if (!normalized || seen.has(normalized)) continue
+            seen.add(normalized)
+            if (existsSync(normalized)) return normalized
         }
         return null
     }
-
     private ensureNativeDecryptor(): boolean {
+        const configuredPath = String(this.configService.get('weixinDllPath') || '').trim()
+        if (this.nativeDecryptInit && !this.nativeDecryptReady && configuredPath && configuredPath !== this.nativeDecryptDllPath) {
+            this.nativeDecryptInit = false
+        }
+
         if (this.nativeDecryptInit) return this.nativeDecryptReady
         this.nativeDecryptInit = true
 
         try {
             const dllPath = this.resolveWeixinDllPath()
             if (!dllPath) {
-                this.nativeDecryptError = 'Weixin.dll not found, set WEFLOW_WEIXIN_DLL if needed'
+                this.nativeDecryptError = 'Weixin.dll not found, please set it in Settings or WEFLOW_WEIXIN_DLL'
                 return false
             }
 
@@ -349,6 +358,3 @@ class SnsService {
 }
 
 export const snsService = new SnsService()
-
-
-
